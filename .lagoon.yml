@@ -1,0 +1,65 @@
+docker-compose-yaml: docker-compose.yml
+
+project: tbd-programmer-demo
+
+tasks:
+  post-rollout:
+    - run:
+        name: If drupal is not installed
+        command: |
+            if tables=$(drush sqlq "show tables like 'node';") && [ -z "$tables" ]; then
+                drush si --existing-config -y
+            fi
+        service: cli
+        shell: bash
+    - run:
+        name: drush deploy
+        command: |
+            if [[ -f config/sync/system.site.yml ]]; then
+                echo "Config detected, doing a drush deploy"
+                drush deploy
+
+                # Purge all varnish cache to make sure
+                # that new changes will come through
+                # eg. js assets.
+                echo "...and clearing the external cache."
+                drush cache:rebuild-external -y || true
+            else
+                echo "No config detected, clearing cache"
+                drush cr
+            fi
+        service: cli
+
+environments:
+  main:
+
+
+
+    cronjobs:
+      - name: drush cron
+        schedule: "*/15 * * * *"
+        command: drush cron
+        service: cli
+
+container-registries:
+  github:
+    username: any-user-works
+    # The password gets replaced with the value of an lagoon project environment-
+    # variable during lagoons build/deploy process.
+    password: GITHUB_REGISTRY_CREDENTIALS
+    url: ghcr.io
+
+# The following is the default values for Lagoon backup configuration.
+# https://docs.lagoon.sh/lagoon/using-lagoon-the-basics/lagoon-yml#backup-retention
+backup-retention:
+  # Configure the number of monthly, weekly, daily and hourly backups to retain.
+  production:
+    monthly: 1
+    weekly: 6
+    daily: 7
+    # Be aware that hourly backups are only possible if the backup schedule is
+    # adjusted to run every hour.
+    hourly: 0
+# https://docs.lagoon.sh/lagoon/using-lagoon-the-basics/lagoon-yml#backup-schedule
+backup-schedule:
+  production: M H(22-2) * * *
